@@ -16,15 +16,19 @@
     text-align: center;
     background: #8B4513;
     border-radius: 20px;
-    padding: 30px 25px 20px;
+    padding: 25px 25px 20px;
     box-shadow: 0 12px 40px rgba(0,0,0,.5), inset 0 2px 6px rgba(255,255,255,.15);
     border: 4px solid #5c2e00;
   }
-  h1 { font-size: 2.2em; margin-bottom: 8px; }
+  h1 { font-size: 2em; margin-bottom: 6px; }
   .info {
-    display: flex; justify-content: center; gap: 40px;
-    margin-bottom: 16px; font-size: 1.3em; font-weight: bold; color: #ffeaa7;
+    display: flex; justify-content: center; gap: 18px;
+    margin-bottom: 14px; font-size: 1.15em; font-weight: bold; color: #ffeaa7;
+    flex-wrap: wrap;
   }
+  .info .combo { color: #ff7675; min-width: 62px; }
+  .info .combo.hot { animation: pulse .3s ease; }
+  @keyframes pulse { 50% { transform: scale(1.4); } }
   .board {
     display: grid;
     grid-template-columns: repeat(3, 110px);
@@ -32,12 +36,17 @@
     gap: 12px;
     justify-content: center;
   }
+  .board.shake { animation: shake .3s ease; }
+  @keyframes shake {
+    20% { transform: translateX(-6px); } 40% { transform: translateX(6px); }
+    60% { transform: translateX(-4px); } 80% { transform: translateX(4px); }
+  }
   .hole {
     position: relative;
     background: radial-gradient(ellipse at center, #3e1a00 60%, #2a0f00 100%);
     border-radius: 50%;
     cursor: pointer;
-    overflow: hidden;
+    overflow: visible;
     box-shadow: inset 0 8px 16px rgba(0,0,0,.7);
   }
   .mole {
@@ -46,12 +55,25 @@
     font-size: 70px;
     transition: transform .1s ease-out;
     pointer-events: none;
+    z-index: 1;
   }
   .mole.up { transform: translate(-50%, 15%); }
   .mole.whacked { filter: brightness(0.4) saturate(0); }
+  .float {
+    position: absolute; top: 15px; left: 50%;
+    transform: translateX(-50%);
+    font-weight: 900; font-size: 1.3em;
+    pointer-events: none; z-index: 2;
+    text-shadow: 0 2px 4px rgba(0,0,0,.6);
+    animation: rise .7s ease-out forwards;
+  }
+  .float.plus { color: #ffeaa7; }
+  .float.minus { color: #ff7675; }
+  @keyframes rise { to { top: -25px; opacity: 0; } }
+  .bar { display: flex; justify-content: center; gap: 12px; margin-top: 18px; }
   .btn {
-    margin-top: 20px; padding: 12px 40px;
-    font-size: 1.2em; font-weight: bold; border: none;
+    padding: 12px 32px;
+    font-size: 1.15em; font-weight: bold; border: none;
     border-radius: 30px; cursor: pointer;
     background: #fdcb6e; color: #2d3436;
     box-shadow: 0 4px 0 #e17055;
@@ -59,6 +81,25 @@
   }
   .btn:active { transform: translateY(3px); box-shadow: 0 1px 0 #e17055; }
   .btn:disabled { opacity: .5; pointer-events: none; }
+  .btn.small { padding: 12px 18px; }
+  .overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,.65);
+    display: none; justify-content: center; align-items: center;
+    z-index: 10;
+  }
+  .overlay.show { display: flex; }
+  .panel {
+    background: #8B4513; border: 4px solid #5c2e00; border-radius: 20px;
+    padding: 30px 45px; color: #ffeaa7; text-align: center;
+    box-shadow: 0 12px 40px rgba(0,0,0,.6);
+    animation: pop .25s ease-out;
+  }
+  @keyframes pop { from { transform: scale(.7); opacity: 0; } }
+  .panel h2 { font-size: 1.8em; margin-bottom: 14px; }
+  .panel p { font-size: 1.2em; margin: 6px 0; }
+  .panel .record { color: #55efc4; font-weight: bold; }
+  .panel .btn { margin-top: 18px; }
 </style>
 </head>
 <body>
@@ -68,9 +109,24 @@
   <div class="info">
     <span>⭐ <span id="score">0</span></span>
     <span>⏱ <span id="timer">30</span>s</span>
+    <span class="combo" id="comboEl"></span>
+    <span>🏆 <span id="highscore">0</span></span>
   </div>
   <div class="board" id="board"></div>
-  <button class="btn" id="startBtn">🔨 开始游戏</button>
+  <div class="bar">
+    <button class="btn" id="startBtn">🔨 开始游戏</button>
+    <button class="btn small" id="muteBtn">🔊</button>
+  </div>
+</div>
+
+<div class="overlay" id="overlay">
+  <div class="panel">
+    <h2 id="resultTitle">⏰ 时间到！</h2>
+    <p>得分 <b id="finalScore">0</b></p>
+    <p>最高连击 <b id="finalCombo">0</b></p>
+    <p class="record" id="recordMsg"></p>
+    <button class="btn" id="againBtn">🔁 再来一局</button>
+  </div>
 </div>
 
 <script>
@@ -78,82 +134,163 @@
   const board = document.getElementById('board');
   const scoreEl = document.getElementById('score');
   const timerEl = document.getElementById('timer');
+  const comboEl = document.getElementById('comboEl');
+  const highEl = document.getElementById('highscore');
   const startBtn = document.getElementById('startBtn');
+  const muteBtn = document.getElementById('muteBtn');
+  const overlay = document.getElementById('overlay');
 
-  const ROWS = 3, COLS = 3, GAME_DURATION = 30;
+  const GAME_DURATION = 30;
+  const HS_KEY = 'whac-mole-highscore';
+  const MUTE_KEY = 'whac-mole-muted';
+
   let score = 0, timeLeft = GAME_DURATION, active = false;
+  let combo = 0, bestCombo = 0;
   let moleTimer, countdownTimer;
+  let highscore = +(localStorage.getItem(HS_KEY) || 0);
+  let muted = localStorage.getItem(MUTE_KEY) === '1';
 
-  // 创建洞和地鼠
+  highEl.textContent = highscore;
+  muteBtn.textContent = muted ? '🔇' : '🔊';
+
+  // ===== 音效（Web Audio，无需音频文件）=====
+  let audioCtx = null;
+  function initAudio() {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+  }
+  function beep(freq, dur, type = 'square', vol = 0.12, delay = 0) {
+    if (muted || !audioCtx) return;
+    const t = audioCtx.currentTime + delay;
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.type = type; o.frequency.setValueAtTime(freq, t);
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start(t); o.stop(t + dur);
+  }
+  const sndHit = c => { beep(300 + Math.min(c, 15) * 40, .1, 'square', .12); beep(500 + Math.min(c, 15) * 40, .08, 'square', .06, .04); };
+  const sndMiss = () => beep(110, .12, 'sawtooth', .06);
+  const sndPop = () => beep(700, .05, 'sine', .04);
+  const sndBomb = () => { beep(70, .3, 'sawtooth', .2); beep(50, .35, 'square', .15, .02); };
+  const sndOver = win => {
+    const seq = win ? [523, 659, 784, 1047] : [400, 350, 300, 200];
+    seq.forEach((f, i) => beep(f, .18, 'triangle', .12, i * .15));
+  };
+
+  // ===== 棋盘 =====
   const cells = [];
-  for (let i = 0; i < ROWS * COLS; i++) {
+  for (let i = 0; i < 9; i++) {
     const hole = document.createElement('div');
     hole.className = 'hole';
-
     const mole = document.createElement('span');
     mole.className = 'mole';
     mole.textContent = '🐹';
     hole.appendChild(mole);
-
     hole.addEventListener('click', () => whack(i));
     board.appendChild(hole);
-    cells.push({ hole, mole, active: false });
+    cells.push({ hole, mole, active: false, bomb: false });
+  }
+
+  function floatText(hole, txt, cls) {
+    const s = document.createElement('span');
+    s.className = 'float ' + cls;
+    s.textContent = txt;
+    hole.appendChild(s);
+    setTimeout(() => s.remove(), 700);
+  }
+
+  function setCombo(n) {
+    combo = n;
+    comboEl.textContent = combo >= 2 ? `🔥x${combo}` : '';
+    if (combo > bestCombo) bestCombo = combo;
   }
 
   function whack(i) {
     const c = cells[i];
-    if (!active || !c.active) return;
+    if (!active) return;
+    if (!c.active) { sndMiss(); return; }   // 点空洞：只响 miss，不清连击
+
     c.active = false;
     c.mole.classList.remove('up');
-    c.mole.classList.add('whacked');
-    score++;
+
+    if (c.bomb) {
+      // 💣 炸弹：扣 2 分、断连击、震屏
+      c.mole.classList.add('whacked');
+      score = Math.max(0, score - 2);
+      setCombo(0);
+      sndBomb();
+      floatText(c.hole, '-2', 'minus');
+      board.classList.add('shake');
+      setTimeout(() => { c.mole.classList.remove('whacked'); board.classList.remove('shake'); }, 300);
+    } else {
+      // 🐹 地鼠：连击越高加分越多（每 5 连击 +1，封顶 +5）
+      setCombo(combo + 1);
+      const pts = 1 + Math.min(4, Math.floor(combo / 5));
+      score += pts;
+      sndHit(combo);
+      floatText(c.hole, '+' + pts, 'plus');
+      c.mole.classList.add('whacked');
+      comboEl.classList.remove('hot'); void comboEl.offsetWidth; comboEl.classList.add('hot');
+      setTimeout(() => c.mole.classList.remove('whacked'), 200);
+    }
     scoreEl.textContent = score;
-    // 短暂特效
-    c.hole.style.boxShadow = 'inset 0 8px 16px rgba(0,0,0,.7), 0 0 20px #ffeaa7';
-    setTimeout(() => {
-      c.mole.classList.remove('whacked');
-      c.hole.style.boxShadow = 'inset 0 8px 16px rgba(0,0,0,.7)';
-    }, 200);
   }
 
-  function showRandomMole() {
+  // ===== 难度递增 =====
+  // 返回当前阶段：生成间隔 / 同时最多几只 / 停留时长 / 炸弹概率
+  function phase() {
+    const elapsed = GAME_DURATION - timeLeft;
+    if (elapsed < 10) return { gap: 550, max: 1, stay: [700, 1200], bomb: 0 };
+    if (elapsed < 20) return { gap: 400, max: 2, stay: [500, 900], bomb: 0.15 };
+    return { gap: 300, max: 3, stay: [350, 650], bomb: 0.2 };
+  }
+
+  function showMole() {
     if (!active) return;
-    // 概率出现，控制难度
-    if (Math.random() > 0.65) return;
+    const p = phase();
+    const upCount = cells.filter(c => c.active).length;
+    if (upCount >= p.max) return;
+    if (Math.random() > 0.7) return;
 
     const free = cells.filter(c => !c.active);
-    if (free.length === 0) return;
-
+    if (!free.length) return;
     const cell = free[Math.floor(Math.random() * free.length)];
+
+    cell.bomb = Math.random() < p.bomb;
+    cell.mole.textContent = cell.bomb ? '💣' : '🐹';
     cell.active = true;
     cell.mole.classList.add('up');
+    sndPop();
 
-    // 随机停留时间 0.6~1.2s
-    const stay = 600 + Math.random() * 600;
+    const stay = p.stay[0] + Math.random() * (p.stay[1] - p.stay[0]);
     setTimeout(() => {
-      if (cell.active) {
-        cell.active = false;
-        cell.mole.classList.remove('up');
-      }
+      if (!cell.active || !active) return;
+      cell.active = false;
+      cell.mole.classList.remove('up');
+      if (!cell.bomb) setCombo(0);   // 地鼠溜走 → 连击断；炸弹溜走无所谓
     }, stay);
   }
 
+  // ===== 流程 =====
   function start() {
-    // 重置
-    score = 0; timeLeft = GAME_DURATION; active = true;
+    initAudio();
+    overlay.classList.remove('show');
+    score = 0; timeLeft = GAME_DURATION;
+    setCombo(0); bestCombo = 0;
     scoreEl.textContent = '0';
     timerEl.textContent = timeLeft;
     startBtn.disabled = true;
+    active = true;
 
     cells.forEach(c => {
-      c.active = false;
-      c.mole.classList.remove('up', 'whacked');
+      c.active = false; c.bomb = false;
+      c.mole.className = 'mole';
+      c.mole.textContent = '🐹';
     });
 
-    // 地鼠出现间隔
-    moleTimer = setInterval(showRandomMole, 500);
-
-    // 倒计时
+    moleTimer = setInterval(showMole, 300);  // 高频轮询，间隔由 phase 控制
     countdownTimer = setInterval(() => {
       timeLeft--;
       timerEl.textContent = timeLeft;
@@ -166,14 +303,30 @@
     clearInterval(moleTimer);
     clearInterval(countdownTimer);
     startBtn.disabled = false;
-    cells.forEach(c => {
-      c.active = false;
-      c.mole.classList.remove('up');
-    });
-    alert(`⏰ 时间到！\n\n你砸了 ${score} 只地鼠 🐹`);
+    cells.forEach(c => { c.active = false; c.mole.classList.remove('up'); });
+
+    const isRecord = score > highscore;
+    if (isRecord) {
+      highscore = score;
+      localStorage.setItem(HS_KEY, highscore);
+      highEl.textContent = highscore;
+    }
+    sndOver(isRecord);
+
+    document.getElementById('finalScore').textContent = score;
+    document.getElementById('finalCombo').textContent = bestCombo;
+    document.getElementById('resultTitle').textContent = isRecord ? '🎉 新纪录！' : '⏰ 时间到！';
+    document.getElementById('recordMsg').textContent = isRecord ? '' : `🏆 最高分 ${highscore}`;
+    overlay.classList.add('show');
   }
 
   startBtn.addEventListener('click', start);
+  document.getElementById('againBtn').addEventListener('click', start);
+  muteBtn.addEventListener('click', () => {
+    muted = !muted;
+    localStorage.setItem(MUTE_KEY, muted ? '1' : '0');
+    muteBtn.textContent = muted ? '🔇' : '🔊';
+  });
 })();
 </script>
 </body>
