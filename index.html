@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🔨 打地鼠</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    display: flex; justify-content: center; align-items: center;
+    min-height: 100vh; background: linear-gradient(135deg, #1a5e1a, #2d8a2d);
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    user-select: none; -webkit-user-select: none;
+  }
+  .game {
+    text-align: center;
+    background: #8B4513;
+    border-radius: 20px;
+    padding: 30px 25px 20px;
+    box-shadow: 0 12px 40px rgba(0,0,0,.5), inset 0 2px 6px rgba(255,255,255,.15);
+    border: 4px solid #5c2e00;
+  }
+  h1 { font-size: 2.2em; margin-bottom: 8px; }
+  .info {
+    display: flex; justify-content: center; gap: 40px;
+    margin-bottom: 16px; font-size: 1.3em; font-weight: bold; color: #ffeaa7;
+  }
+  .board {
+    display: grid;
+    grid-template-columns: repeat(3, 110px);
+    grid-template-rows: repeat(3, 110px);
+    gap: 12px;
+    justify-content: center;
+  }
+  .hole {
+    position: relative;
+    background: radial-gradient(ellipse at center, #3e1a00 60%, #2a0f00 100%);
+    border-radius: 50%;
+    cursor: pointer;
+    overflow: hidden;
+    box-shadow: inset 0 8px 16px rgba(0,0,0,.7);
+  }
+  .mole {
+    position: absolute; bottom: 0; left: 50%;
+    transform: translate(-50%, 100%);
+    font-size: 70px;
+    transition: transform .1s ease-out;
+    pointer-events: none;
+  }
+  .mole.up { transform: translate(-50%, 15%); }
+  .mole.whacked { filter: brightness(0.4) saturate(0); }
+  .btn {
+    margin-top: 20px; padding: 12px 40px;
+    font-size: 1.2em; font-weight: bold; border: none;
+    border-radius: 30px; cursor: pointer;
+    background: #fdcb6e; color: #2d3436;
+    box-shadow: 0 4px 0 #e17055;
+    transition: transform .1s, box-shadow .1s;
+  }
+  .btn:active { transform: translateY(3px); box-shadow: 0 1px 0 #e17055; }
+  .btn:disabled { opacity: .5; pointer-events: none; }
+</style>
+</head>
+<body>
+
+<div class="game">
+  <h1>🔨 打地鼠</h1>
+  <div class="info">
+    <span>⭐ <span id="score">0</span></span>
+    <span>⏱ <span id="timer">30</span>s</span>
+  </div>
+  <div class="board" id="board"></div>
+  <button class="btn" id="startBtn">🔨 开始游戏</button>
+</div>
+
+<script>
+(() => {
+  const board = document.getElementById('board');
+  const scoreEl = document.getElementById('score');
+  const timerEl = document.getElementById('timer');
+  const startBtn = document.getElementById('startBtn');
+
+  const ROWS = 3, COLS = 3, GAME_DURATION = 30;
+  let score = 0, timeLeft = GAME_DURATION, active = false;
+  let moleTimer, countdownTimer;
+
+  // 创建洞和地鼠
+  const cells = [];
+  for (let i = 0; i < ROWS * COLS; i++) {
+    const hole = document.createElement('div');
+    hole.className = 'hole';
+
+    const mole = document.createElement('span');
+    mole.className = 'mole';
+    mole.textContent = '🐹';
+    hole.appendChild(mole);
+
+    hole.addEventListener('click', () => whack(i));
+    board.appendChild(hole);
+    cells.push({ hole, mole, active: false });
+  }
+
+  function whack(i) {
+    const c = cells[i];
+    if (!active || !c.active) return;
+    c.active = false;
+    c.mole.classList.remove('up');
+    c.mole.classList.add('whacked');
+    score++;
+    scoreEl.textContent = score;
+    // 短暂特效
+    c.hole.style.boxShadow = 'inset 0 8px 16px rgba(0,0,0,.7), 0 0 20px #ffeaa7';
+    setTimeout(() => {
+      c.mole.classList.remove('whacked');
+      c.hole.style.boxShadow = 'inset 0 8px 16px rgba(0,0,0,.7)';
+    }, 200);
+  }
+
+  function showRandomMole() {
+    if (!active) return;
+    // 概率出现，控制难度
+    if (Math.random() > 0.65) return;
+
+    const free = cells.filter(c => !c.active);
+    if (free.length === 0) return;
+
+    const cell = free[Math.floor(Math.random() * free.length)];
+    cell.active = true;
+    cell.mole.classList.add('up');
+
+    // 随机停留时间 0.6~1.2s
+    const stay = 600 + Math.random() * 600;
+    setTimeout(() => {
+      if (cell.active) {
+        cell.active = false;
+        cell.mole.classList.remove('up');
+      }
+    }, stay);
+  }
+
+  function start() {
+    // 重置
+    score = 0; timeLeft = GAME_DURATION; active = true;
+    scoreEl.textContent = '0';
+    timerEl.textContent = timeLeft;
+    startBtn.disabled = true;
+
+    cells.forEach(c => {
+      c.active = false;
+      c.mole.classList.remove('up', 'whacked');
+    });
+
+    // 地鼠出现间隔
+    moleTimer = setInterval(showRandomMole, 500);
+
+    // 倒计时
+    countdownTimer = setInterval(() => {
+      timeLeft--;
+      timerEl.textContent = timeLeft;
+      if (timeLeft <= 0) end();
+    }, 1000);
+  }
+
+  function end() {
+    active = false;
+    clearInterval(moleTimer);
+    clearInterval(countdownTimer);
+    startBtn.disabled = false;
+    cells.forEach(c => {
+      c.active = false;
+      c.mole.classList.remove('up');
+    });
+    alert(`⏰ 时间到！\n\n你砸了 ${score} 只地鼠 🐹`);
+  }
+
+  startBtn.addEventListener('click', start);
+})();
+</script>
+</body>
+</html>
